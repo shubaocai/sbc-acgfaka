@@ -1,20 +1,26 @@
 # sbc-acgfaka
 
-> 鼠宝财 · 一键部署 [acg-faka](https://github.com/lizhipay/acg-faka) 发卡商城（Docker）
+> [鼠宝财](https://blog.mopush.cn) · 一键部署 [acg-faka](https://github.com/lizhipay/acg-faka) 发卡商城（VPS 用脚本，虚拟主机用 PHP 向导）
 
-一条命令在 Linux 服务器上把 [acg-faka（异次元店铺系统）](https://github.com/lizhipay/acg-faka) 跑起来：自动检测并安装 Docker、自动生成编排配置、构建应用镜像（nginx + PHP-FPM）、拉起 MySQL 与 Redis、修复容器密钥权限、等健康检查通过，最后打印安装向导地址与运维命令。
+给 [acg-faka（异次元店铺系统）](https://github.com/lizhipay/acg-faka) 配套的两套部署工具：
+
+- **`install_acgfaka.sh`**：VPS / 云服务器一条命令部署 —— 装 Docker、构建镜像（nginx + PHP-FPM）、拉起 MySQL 与 Redis、修好容器密钥权限、等健康检查通过，最后打印安装向导地址。全过程约 9~12 分钟。
+- **`deploy.php`**：虚拟主机 / 面板空间用的浏览器部署向导 —— 上传一个 PHP 文件，点几下就能完成环境检测、下载解压、目录权限修正、伪静态检查，然后进安装向导。不需要 Docker，也不需要命令行和 composer。
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Docker-blue)
+![Platform](https://img.shields.io/badge/platform-虚拟主机%20%7C%20PHP%208.0%2B-green)
 ![Upstream](https://img.shields.io/badge/acg--faka-3.7.9-orange)
 
 ---
 
 ## 目录
 
+- [两种部署方式](#两种部署方式)
 - [特性](#特性)
 - [环境要求](#环境要求)
-- [快速开始](#快速开始)
+- [VPS 部署（Docker）](#vps-部署docker)
+- [虚拟主机部署（免 Docker）](#虚拟主机部署免-docker)
 - [安装向导](#安装向导)
 - [使用示例](#使用示例)
 - [环境变量](#环境变量)
@@ -31,6 +37,16 @@
 
 ---
 
+## 两种部署方式
+
+| 文件 | 适用环境 | 做法 |
+| --- | --- | --- |
+| `install_acgfaka.sh` | **VPS / 云服务器**：有 root、有 shell | 装 Docker → 现场构建应用镜像 → `docker compose` 起 MySQL + Redis + 应用，数据全在 Docker 卷里 |
+| `deploy.php` | **虚拟主机 / 面板空间**：只有 FTP 和面板 | 上传到网站根目录 → 浏览器点几下：环境检测 / 下载解压 / 建运行目录 / 伪静态检查 → 进安装向导 |
+
+两者装出来是**同一套程序、同一个安装向导**，区别只在运行环境：前者容器化，后者直接用主机自带的 PHP + MySQL。
+
+
 ## 特性
 
 - **全自动**：服务器没装 Docker 就自动装（官方源 + 国内镜像多源探测，`download.docker.com` 被墙也能装上）；项目源码、镜像构建、容器启动、健康检查一条龙。
@@ -44,21 +60,26 @@
 
 ## 环境要求
 
-| 项目 | 要求 |
-| --- | --- |
-| 系统 | Linux（需 systemd），Ubuntu / Debian 已实测；其它发行版未验证 |
-| 权限 | **root**（或 `sudo`） |
-| Shell | **bash** |
-| 依赖 | `git`、`curl`（脚本自动补装）、`python3`（Ubuntu / Debian 默认自带，用于给上游 Dockerfile 打加速补丁） |
-| 架构 | `x86_64`；`arm64` 会自动把 MySQL 换成 `mariadb:10.6`（MySQL 5.7 无 arm64 官方镜像） |
-| 内存 | 建议 ≥ 2GB；低于 4GB 且无 swap 时脚本自动加 2GB swap |
-| 磁盘 | 建议 ≥ 5GB 可用（镜像与构建缓存约 3~4GB） |
-| 端口 | `8080`（可改）需空闲，并在云厂商安全组放行 |
-| 网络 | 能访问外网（装 Docker、拉镜像、拉源码） |
+| 项目 | VPS（脚本） | 虚拟主机（deploy.php） |
+| --- | --- | --- |
+| 系统 | Linux + systemd，Ubuntu / Debian 已实测 | 任意支持 PHP 的主机（Apache / LiteSpeed / Nginx / 宝塔 / cPanel） |
+| 权限 | root 或 sudo | 只有 FTP 和面板即可 |
+| Shell / 依赖 | bash，`git`、`curl`（脚本自动补装）、`python3`（Ubuntu / Debian 默认自带） | 不需要 shell，也不需要 composer |
+| 架构 | `x86_64`；`arm64` 自动改用 `mariadb:10.6` | 不限 |
+| PHP | 不需要（跑在容器里） | **≥ 8.0**（推荐 8.2） |
+| 数据库 | 脚本自带容器 MySQL 5.7 | 面板里自建 MySQL ≥ 5.6（推荐 5.7+） |
+| 必需扩展 | — | `pdo_mysql`、`gd`、`zip`、`bcmath`、`mbstring`、`curl`、`json`、`session`、`openssl`、`fileinfo` |
+| 建议扩展 | — | `opcache`（提速）、`redis`（会话缓存，没有则用文件） |
+| 目录可写 | 脚本自动处理 | `config/`、`runtime/`、`assets/cache/`、`app/Plugin/`、`app/Pay/`、`app/View/User/Theme/`、`kernel/Install/` |
+| 伪静态 | 脚本写 nginx 配置 | Apache / LiteSpeed 用程序自带 `.htaccess`；Nginx 按向导给出的规则配置 |
+| 其他 | 内存 ≥ 2GB、磁盘 ≥ 5GB、端口 8080 放行 | 磁盘 ≥ 200MB 空闲、能外网下载（curl 或 allow_url_fopen 至少一种） |
 
-已在 **Ubuntu 22.04.5 LTS（x86_64，2 vCPU / 2GB 内存）** 实测：从零开始装 Docker + 构建镜像 + 起服务，约 **9~12 分钟**（其中一半以上时间花在容器内编译 PHP 扩展，2 核机器上这段是纯 CPU 活）；镜像构建完成后再跑本脚本，走缓存约 1 分钟。
+实测数据：
 
-## 快速开始
+- **VPS**：Ubuntu 22.04.5 LTS（x86_64，2 vCPU / 2GB 内存）从零开始装 Docker + 构建镜像 + 起服务约 **9~12 分钟**（一半以上时间花在容器内编译 PHP 扩展）；镜像构建过之后再跑一次，走缓存约 1 分钟。
+- **虚拟主机**：PHP 8.1 环境下，下载 14.9 MB 离线包 → 解压 3686 个文件 → 建运行目录 → 依赖校验全流程通过；解压出的程序在纯 PHP（无 Docker）下 `/index.php`、`/install/step` 均返回 200。
+
+## VPS 部署（Docker）
 
 ```bash
 # 1. 克隆
@@ -87,6 +108,44 @@ curl -fsSL -o /tmp/acgfaka.sh https://raw.githubusercontent.com/shubaocai/sbc-ac
 http://<服务器IP>:8080/
 ```
 
+## 虚拟主机部署（免 Docker）
+
+没有 shell、没有 Docker、面板里也跑不了命令行的虚拟主机，用 `deploy.php` 这个浏览器向导。
+
+### 用法
+
+1. 把 `deploy.php` 上传到网站根目录（FTP 或面板文件管理器都行）
+2. 浏览器访问 `http://你的域名/deploy.php`
+3. 首次打开先设置一个**访问密码**（防止别人也能打开这个工具）
+4. 按页面顺序点：
+
+| 步骤 | 做什么 |
+| --- | --- |
+| 1. 环境检测 | 检查 PHP 版本、必需扩展、目录可写、剩余空间，缺什么会直接告诉你 |
+| 2. 选择安装位置 | 默认装当前目录；也可以填 `shop` 装到子目录（会自动改 `.htaccess` 的 `RewriteBase`） |
+| 3. 下载并解压 | 从上游仓库拉离线包（多源自动切换、分块下载不会超时），**包内已自带 `vendor` 依赖，不需要 composer** |
+| 4. 目录与权限 | 创建 `runtime/`、`assets/cache/`、`app/Plugin/` 等运行目录并放开写权限，同时校验依赖与入口文件 |
+| 5. 伪静态 | 调应用自己的检测接口确认规则生效；Apache / LiteSpeed 用自带 `.htaccess` 即可，Nginx 按页面给的规则配置 |
+| 6. 完成 | 一键打开安装向导，装完建议点「删除本部署文件」 |
+
+### 说明
+
+- **打开就 500 / 白屏怎么办**：`deploy.php` 从 v1.1 起会在页面上把具体错误显示出来（含文件行号、环境信息、可能原因），不会再白屏。
+  常见的三类原因：
+  1. **PHP 版本太低**：低于 7.0 时页面会直接提示去面板切换 PHP 版本（卡乐 / Kangle、宝塔、cPanel 各自的位置都写在页面上）；程序本身要求 **PHP 8.0+**。
+  2. **主机禁用了函数**：卡乐 / Kangle、部分宝塔主机会在 `disable_functions` 里禁掉 `disk_free_space`、`disk_total_space`、`chmod`、`readlink`、`putenv`、`ini_set` 等。从 v1.1 起部署器会先探测再调用，能跳过的自动跳过——环境检测里会显示「剩余空间：主机未开放查询」「主机禁用了一部分函数（…），已自动跳过，不影响安装」，**这类禁用不影响安装**；只有 `zip`、`pdo_mysql`、`gd`、`bcmath` 这类**扩展**缺失，才需要去面板给当前 PHP 版本装上再继续。
+  3. **文件权限**：有的主机（suPHP / suEXEC 模式）要求 PHP 文件必须是 **644**、目录 755，权限过宽会直接 500。用面板或 FTP 把 `deploy.php` 改成 644 再试。
+- **不需要 composer**：上游的发布包里自带 `vendor/`，部署器直接把整包解压好；如果哪天官方不再随包发布依赖，向导会明确提示你去执行 `composer install --no-dev`。
+- **下载不通也能装**：向导第 3 步除了在线下载，还提供「本地上传离线包」——在没有外网出口的主机上，自己下载 zip 再上传即可；页面会显示主机允许的 `upload_max_filesize` / `post_max_size`。
+- **不需要 Redis**：没有 redis 扩展时程序自动退回文件会话，只在环境检测里给个「建议装」的提示。
+- **状态文件不放网站根目录**：访问密码哈希与进度记在系统临时目录（`sys_get_temp_dir()`）里，不会被别人下载到；同时也兼容 `open_basedir` 限制（受限时自动回退到网站目录）。
+- **下载地址白名单**：只允许从 GitHub 及其加速代理下载，避免这个工具被当成任意 URL 下载器。
+- **装完请删除 `deploy.php`**：程序自带的 `.htaccess` 会拦掉除 `index.php` 以外的所有 PHP 文件，但删掉更干净；向导里有「删除本部署文件」按钮。
+
+### 数据库
+
+虚拟主机一般要自己在面板里建库建用户（记下库名、用户名、密码），然后在**应用的安装向导**第 2 步填进去；向导会自动建表、导入语言包，不需要你手工导 SQL。
+
 ## 安装向导
 
 首次访问会进入安装向导，三步走完即可：
@@ -94,13 +153,13 @@ http://<服务器IP>:8080/
 | 步骤 | 要做什么 |
 | --- | --- |
 | 1. 环境检测 | 页面自动检测，全绿直接下一步 |
-| 2. 数据库 | **什么都不用改**，密码框留空，直接点「下一步」（服务端自己从密钥卷取） |
+| 2. 数据库 | **VPS 部署**：什么都不用改，密码框留空直接「下一步」（服务端自己从密钥卷取）；**虚拟主机**：填面板里建好的库名 / 用户 / 密码 |
 | 3. 管理员 | 填邮箱、昵称、登录密码，完成安装 |
 
 完成后前台是商城首页，后台地址：
 
 ```
-http://<服务器IP>:8080/admin        # 会跳到 /admin/authentication/login，登录带验证码
+http://<服务器IP 或 域名>/admin        # 会跳到 /admin/authentication/login，登录带验证码
 ```
 
 > **已知现象**：向导可能停在「导入语言包」不动。此时**安装其实已经完成**——程序先写安装锁、再导语言包，页面若重发请求会收到「您已经安装过了」而卡住。关掉向导，直接访问 `/admin` 用刚才的邮箱密码登录即可。
@@ -351,4 +410,4 @@ acg-faka 是 MIT 协议的开源项目，作者在仓库 README 中明确声明�
 
 ## License
 
-[MIT](LICENSE) © 2026 鼠宝财
+[MIT](LICENSE) © 2026 [鼠宝财](https://blog.mopush.cn)
